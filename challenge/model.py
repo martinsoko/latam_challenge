@@ -6,6 +6,23 @@ from typing import Tuple, Union, List
 
 class DelayModel:
 
+    # Columns required as input to preprocess().
+    _EXPECTED_FEATURES = ['OPERA', 'MES', 'TIPOVUELO']
+
+    # Top-10 features selected from the exploration analysis.
+    _TOP_10_FEATURES = [
+        "OPERA_Latin American Wings",
+        "MES_7",
+        "MES_10",
+        "OPERA_Grupo LATAM",
+        "MES_12",
+        "TIPOVUELO_I",
+        "MES_4",
+        "MES_11",
+        "OPERA_Sky Airline",
+        "OPERA_Copa Air"
+    ]
+
     def __init__(
         self
     ):
@@ -25,29 +42,6 @@ class DelayModel:
         self.range3_max = datetime.strptime('31-Jul', '%d-%b')
         self.range4_min = datetime.strptime('11-Sep', '%d-%b')
         self.range4_max = datetime.strptime('30-Sep', '%d-%b')
-
-        # Define the expected features
-        self._EXPECTED_FEATURES = [
-            'OPERA', 
-            'MES', 
-            'TIPOVUELO', 
-            # 'SIGLADES', 
-            # 'DIANOM'
-        ]
-
-        # Define the features to be used in the model.
-        self._TOP_10_FEATURES = [
-            "OPERA_Latin American Wings", 
-            "MES_7",
-            "MES_10",
-            "OPERA_Grupo LATAM",
-            "MES_12",
-            "TIPOVUELO_I",
-            "MES_4",
-            "MES_11",
-            "OPERA_Sky Airline",
-            "OPERA_Copa Air"
-        ]
 
     def _is_high_season(self, fecha: str) -> int:
         """
@@ -196,7 +190,7 @@ class DelayModel:
         """
         Predict delays for new flights.
         Requires features to be preprocessed with the preprocess method.
-        Requires features to have self.top_10_features columns. Extra columns are allowed but will be ignored. Missing columns will raise an error.
+        Requires features to have _TOP_10_FEATURES columns. Extra columns are allowed but will be ignored. Missing columns will raise an error.
 
         Args:
             features (pd.DataFrame): preprocessed data.
