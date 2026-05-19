@@ -27,16 +27,16 @@ class DelayModel:
         self.range4_max = datetime.strptime('30-Sep', '%d-%b')
 
         # Define the expected features
-        self.expected_features = [
+        self._EXPECTED_FEATURES = [
             'OPERA', 
             'MES', 
             'TIPOVUELO', 
-            'SIGLADES', 
-            'DIANOM'
+            # 'SIGLADES', 
+            # 'DIANOM'
         ]
 
         # Define the features to be used in the model.
-        self.top_10_features = [
+        self._TOP_10_FEATURES = [
             "OPERA_Latin American Wings", 
             "MES_7",
             "MES_10",
@@ -133,8 +133,8 @@ class DelayModel:
         """
         
         # Validate that the expected features are in the data.
-        if not set(self.expected_features).issubset(set(data.columns)):
-            raise ValueError(f"Expected features {self.expected_features} not found in data columns {data.columns}")
+        if not set(self._EXPECTED_FEATURES).issubset(set(data.columns)):
+            raise ValueError(f"Expected features {self._EXPECTED_FEATURES} not found in data columns {data.columns}")
         
         # Validate that the target column can be built
         if target_column and not set(['Fecha-O', 'Fecha-I']).issubset(set(data.columns)):
@@ -145,19 +145,19 @@ class DelayModel:
 
         # One-hot encode categorical features
         features = pd.concat([
-            pd.get_dummies(data['OPERA'], prefix = 'OPERA'),
-            pd.get_dummies(data['TIPOVUELO'], prefix = 'TIPOVUELO'), 
-            pd.get_dummies(data['MES'], prefix = 'MES')], 
+            pd.get_dummies(data['OPERA'], prefix = 'OPERA', dtype=int),
+            pd.get_dummies(data['TIPOVUELO'], prefix = 'TIPOVUELO', dtype=int), 
+            pd.get_dummies(data['MES'], prefix = 'MES', dtype=int)], 
             axis = 1
         )
 
         # If there's a missing category in the data, add it with all values set to 0.
-        for feature in self.top_10_features:
+        for feature in self._TOP_10_FEATURES:
             if feature not in features.columns:
                 features[feature] = 0
 
         # Select only the top 10 features.
-        features = features[self.top_10_features]
+        features = features[self._TOP_10_FEATURES]
 
         if target_column:
             target = data.apply(self._get_min_diff, axis = 1)
@@ -210,8 +210,8 @@ class DelayModel:
             raise ValueError("Model has not been fitted yet. Please call the fit method before calling predict.")
         
         # Validate that the features have the expected columns.
-        if not set(self.top_10_features).issubset(set(features.columns)):
-            raise ValueError(f"Expected features {self.top_10_features} not found in features columns {features.columns}. Please preprocess the data using the preprocess method before calling predict.")
+        if not set(self._TOP_10_FEATURES).issubset(set(features.columns)):
+            raise ValueError(f"Expected features {self._TOP_10_FEATURES} not found in features columns {features.columns}. Please preprocess the data using the preprocess method before calling predict.")
         
-        predictions = self._model.predict(features[self.top_10_features])
+        predictions = self._model.predict(features[self._TOP_10_FEATURES])
         return predictions.tolist()
