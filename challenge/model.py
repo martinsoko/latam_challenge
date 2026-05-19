@@ -180,8 +180,8 @@ class DelayModel:
         """
 
         # Compute scale_pos_weight to handle class imbalance
-        n_y0 = (target['delay'] == 0).sum()
-        n_y1 = (target['delay'] == 1).sum()
+        n_y0 = (target[target.columns[0]] == 0).sum()
+        n_y1 = (target[target.columns[0]] == 1).sum()
         scale = n_y0/n_y1
 
         self._model = xgb.XGBClassifier(random_state=1, learning_rate=0.01, scale_pos_weight = scale)
