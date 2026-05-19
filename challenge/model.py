@@ -195,6 +195,8 @@ class DelayModel:
     ) -> List[int]:
         """
         Predict delays for new flights.
+        Requires features to be preprocessed with the preprocess method.
+        Requires features to have self.top_10_features columns. Extra columns are allowed but will be ignored. Missing columns will raise an error.
 
         Args:
             features (pd.DataFrame): preprocessed data.
@@ -211,5 +213,5 @@ class DelayModel:
         if not set(self.top_10_features).issubset(set(features.columns)):
             raise ValueError(f"Expected features {self.top_10_features} not found in features columns {features.columns}. Please preprocess the data using the preprocess method before calling predict.")
         
-        predictions = self._model.predict(features)
+        predictions = self._model.predict(features[self.top_10_features])
         return predictions.tolist()
