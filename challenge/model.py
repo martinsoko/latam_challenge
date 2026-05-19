@@ -1,4 +1,5 @@
 from datetime import datetime
+import joblib
 import pandas as pd
 import xgboost as xgb
 
@@ -203,7 +204,7 @@ class DelayModel:
 
         # Validate that the model has been fitted.
         if self._model is None:
-            raise ValueError("Model has not been fitted yet. Please call the fit method before calling predict.")
+            raise ValueError("Model has not been fitted yet. Please call the fit or get_model method before calling predict.")
         
         # Validate that the features have the expected columns.
         if not set(self._TOP_10_FEATURES).issubset(set(features.columns)):
@@ -211,3 +212,24 @@ class DelayModel:
         
         predictions = self._model.predict(features[self._TOP_10_FEATURES])
         return predictions.tolist()
+    
+    def get_model(self, path: str) -> None:
+        """
+        Load a previously fitted model from disk.
+
+        Args:
+            path (str): path to the serialized model file (joblib format).
+        """
+        self._model = joblib.load(path)
+
+    def save_model(self, path: str) -> None:
+        """
+        Persist the fitted model to disk.
+
+        Args:
+            path (str): destination path for the serialized model (joblib format).
+        """
+        if self._model is None:
+            raise ValueError("Model has not been fitted yet. Call fit() before save_model().")
+        joblib.dump(self._model, path)
+        
