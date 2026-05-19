@@ -174,12 +174,11 @@ class DelayModel:
         """
 
         # Compute scale_pos_weight to handle class imbalance
-        try:
-            n_y0 = (target[target.columns[0]] == 0).sum()
-            n_y1 = (target[target.columns[0]] == 1).sum()
-            scale = n_y0/n_y1
-        except ZeroDivisionError:
+        n_y0 = (target[target.columns[0]] == 0).sum()
+        n_y1 = (target[target.columns[0]] == 1).sum()
+        if n_y1 == 0 or n_y0 == 0:
             raise ValueError("The target variable has only one class. Please provide a target variable with both classes 0 and 1 to fit the model.")
+        scale = n_y0/n_y1
 
         self._model = xgb.XGBClassifier(random_state=1, learning_rate=0.01, scale_pos_weight = scale)
         self._model.fit(features, target)
