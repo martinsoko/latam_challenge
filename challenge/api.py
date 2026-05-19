@@ -15,6 +15,8 @@ _DATA_PATH = pathlib.Path(__file__).parent.parent / "data" / "data.csv"
 _MODEL_PATH = pathlib.Path(__file__).parent.parent / "models" / "delay_model.pkl"
 
 _model = DelayModel()
+
+# TODO: wrap this logic so it only runs on startup
 if _MODEL_PATH.exists():
     # Fast path: load the already-trained model from disk.
     _model.get_model(str(_MODEL_PATH))
@@ -75,7 +77,10 @@ async def post_predict(body: PredictRequest) -> dict:
     Returns:
         dict with a 'predict' key containing a list of 0/1 integers (0 = no delay, 1 = delay).
     """
-    df = pd.DataFrame([f.dict() for f in body.flights])
-    features = _model.preprocess(df)
-    predictions = _model.predict(features)
-    return {"predict": predictions}
+    try:
+        df = pd.DataFrame([f.dict() for f in body.flights])
+        features = _model.preprocess(df)
+        predictions = _model.predict(features)
+        return {"predict": predictions}
+    except Exception as e:
+        raise fastapi.HTTPException(status_code=500, detail="Something went wrong during prediction")
