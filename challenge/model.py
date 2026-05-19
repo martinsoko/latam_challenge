@@ -1,5 +1,6 @@
 from datetime import datetime
 import pandas as pd
+import xgboost as xgb
 
 from typing import Tuple, Union, List
 
@@ -139,6 +140,9 @@ class DelayModel:
         if target_column and not set(['Fecha-O', 'Fecha-I']).issubset(set(data.columns)):
             raise ValueError(f"Expected features ['Fecha-O', 'Fecha-I'] not found in data columns {data.columns} to build target column {target_column}")
         
+        # Create a copy of the data to avoid modifying the original dataframe.
+        data = data.copy()
+
         # One-hot encode categorical features
         features = pd.concat([
             pd.get_dummies(data['OPERA'], prefix = 'OPERA'),
@@ -174,6 +178,15 @@ class DelayModel:
             features (pd.DataFrame): preprocessed data.
             target (pd.DataFrame): target.
         """
+
+        # Compute scale_pos_weight to handle class imbalance
+        n_y0 = (target['delay'] == 0).sum()
+        n_y1 = (target['delay'] == 1).sum()
+        scale = n_y0/n_y1
+
+        self._model = xgb.XGBClassifier(random_state=1, learning_rate=0.01, scale_pos_weight = scale)
+        self._model.fit(features, target)
+
         return
 
     def predict(
@@ -189,4 +202,14 @@ class DelayModel:
         Returns:
             (List[int]): predicted targets.
         """
-        return
+
+        # Validate that the model has been fitted.
+        if self._model is None:
+            raise ValueError("Model has not been fitted yet. Please call the fit method before calling predict.")
+        
+        # Validate that the features have the expected columns.
+        if not set(self.top_10_features).issubset(set(features.columns)):
+            raise ValueError(f"Expected features {self.top_10_features} not found in features columns {features.columns}. Please preprocess the data using the preprocess method before calling predict.")
+        
+        predictions = self._model.predict(features)
+        return predictions.tolist()
