@@ -28,3 +28,8 @@ This dockerfile has the issue that the model is not persisted outside the contai
 This is fine for the sake of the exercise, since it's not a really productive system. The data is small so it can be copied into the image and the model training is fast, so the startup delay is not a big deal.
 In a truly production scenario, the data and the model asset(s) would be properly stored and versioned outside the container (for example, data in BigQuery and model assets in GCS) and only the relevant files would be loaded at startup.
 Train and serve containers could have independent dockerfiles, each with it's own set of requirements and processes.
+
+### CD smoke test
+
+The CD workflow polls `/health` after a merge to `main` to verify the deployment, but the check will always pass because Cloud Run keeps the old revision serving until the new one is ready. The old version responds with 200 before the new one takes over, so the smoke test can't tell whether the new deployment actually succeeded.
+To properly verify the new deployment, the `/health` endpoint should expose the `K_REVISION` environment variable (automatically injected by Cloud Run, unique per revision). The smoke test would then capture the current revision at workflow start and poll until it changes. I didn't want to make any changes to the endpoint because it could mess with your evaluation scripts.
