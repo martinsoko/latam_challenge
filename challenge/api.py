@@ -11,6 +11,7 @@ from pydantic import BaseModel, validator
 
 from challenge.model import DelayModel
 
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Paths are resolved relative to this file so they work regardless of cwd.
@@ -91,7 +92,8 @@ async def post_predict(body: PredictRequest) -> dict:
         features = _model.preprocess(df)
         logger.debug("Features shape: %s", features.shape)
         predictions = _model.predict(features)
-        logger.info("Prediction complete: %s", predictions)
+        logger.info("Prediction complete: %d result(s)", len(predictions))
+        logger.debug("Prediction results: %s", predictions)
         return {"predict": predictions}
     except Exception as e:
         logger.error("Prediction failed: %s", e, exc_info=True)
