@@ -1,9 +1,12 @@
 from datetime import datetime
 import joblib
+import logging
 import pandas as pd
 import xgboost as xgb
 
 from typing import Tuple, Union, List
+
+logger = logging.getLogger(__name__)
 
 class DelayModel:
 
@@ -127,14 +130,16 @@ class DelayModel:
             pd.DataFrame: features.
         """
         
+        logger.debug("Preprocessing %d rows (target_column=%s)", len(data), target_column)
+
         # Validate that the expected features are in the data.
         if not set(self._EXPECTED_FEATURES).issubset(set(data.columns)):
             raise ValueError(f"Expected features {self._EXPECTED_FEATURES} not found in data columns {data.columns}")
-        
+
         # Validate that the target column can be built
         if target_column and not set(['Fecha-O', 'Fecha-I']).issubset(set(data.columns)):
             raise ValueError(f"Expected features ['Fecha-O', 'Fecha-I'] not found in data columns {data.columns} to build target column {target_column}")
-        
+
         # Create a copy of the data to avoid modifying the original dataframe.
         data = data.copy()
 
@@ -153,6 +158,8 @@ class DelayModel:
 
         # Select only the top 10 features.
         features = features[self._TOP_10_FEATURES]
+
+        logger.debug("Preprocessing complete: features shape %s", features.shape)
 
         if target_column:
             target = data.apply(self._get_min_diff, axis = 1)
@@ -181,8 +188,13 @@ class DelayModel:
             raise ValueError("The target variable has only one class. Please provide a target variable with both classes 0 and 1 to fit the model.")
         scale = n_y0/n_y1
 
+        logger.info(
+            "Fitting model: %d samples, n_y0=%d, n_y1=%d, scale_pos_weight=%.2f",
+            len(features), n_y0, n_y1, scale,
+        )
         self._model = xgb.XGBClassifier(random_state=1, learning_rate=0.01, scale_pos_weight = scale)
         self._model.fit(features, target)
+        logger.info("Model fitting complete")
 
         return
 
@@ -210,7 +222,9 @@ class DelayModel:
         if not set(self._TOP_10_FEATURES).issubset(set(features.columns)):
             raise ValueError(f"Expected features {self._TOP_10_FEATURES} not found in features columns {features.columns}. Please preprocess the data using the preprocess method before calling predict.")
         
+        logger.debug("Predicting for %d samples", len(features))
         predictions = self._model.predict(features[self._TOP_10_FEATURES])
+        logger.debug("Prediction complete: %d results", len(predictions))
         return predictions.tolist()
     
     def get_model(self, path: str) -> None:
@@ -220,6 +234,7 @@ class DelayModel:
         Args:
             path (str): path to the serialized model file (joblib format).
         """
+        logger.info("Loading model from %s", path)
         self._model = joblib.load(path)
 
     def save_model(self, path: str) -> None:
@@ -231,5 +246,5 @@ class DelayModel:
         """
         if self._model is None:
             raise ValueError("Model has not been fitted yet. Call fit() before save_model().")
+        logger.info("Saving model to %s", path)
         joblib.dump(self._model, path)
-        
