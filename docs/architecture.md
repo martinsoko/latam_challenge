@@ -4,25 +4,6 @@
 
 This service predicts the probability of a flight delay (>15 minutes) at Santiago (SCL) airport. It exposes a REST API backed by a machine learning model trained on historical flight data.
 
-```
-Client Request
-    │
-    ▼
-┌─────────────────────────────────────────┐
-│  FastAPI  (challenge/api.py)            │
-│                                         │
-│  POST /predict  ──►  DelayModel.predict │
-│                           │             │
-│                     preprocess()        │
-│                     XGBClassifier       │
-│                           │             │
-│  {"predict": [0, 1, ...]} ◄─────────── │
-└─────────────────────────────────────────┘
-    │
-    ▼
-Uvicorn (port 8080)
-```
-
 On startup the API attempts to load a pre-trained model from `models/delay_model.pkl`. If that file is absent it trains from `data/data.csv` and persists the artifact.
 
 ---
@@ -138,9 +119,9 @@ latam_challenge/
 ├── docs/
 │   ├── challenge.md         # Implementation decisions and caveats
 │   └── architecture.md      # This file
-├── workflows/               # CI/CD YAML templates (to be moved to .github/workflows/)
-│   ├── ci.yml
-│   └── cd.yml
+├── .github/workflows/       # GitHub Actions CI/CD pipelines
+│   ├── ci.yml               # Test + Docker build gate (runs on PRs)
+│   └── cd.yml               # Post-deploy smoke test (runs on merge to main)
 ├── Dockerfile
 ├── .dockerignore
 ├── Makefile
@@ -212,4 +193,134 @@ make stress-test   # targets http://127.0.0.1:8000 by default
 
 ## CI/CD
 
-To be implemented
+Two systems work together: **GitHub Actions** (test gating) and **Google Cloud Build** (build and deploy). They are independent pipelines that both fire on the same Git events but own different responsibilities.
+
+### Flow diagram
+
+```mermaid
+flowchart TD
+    A([Developer pushes feature branch]) --> test1
+
+    subgraph CI_PUSH["GitHub Actions — ci.yml (push)"]
+        test1["test: install deps → model tests → API tests"] --> build1["build: docker build"]
+    end
+
+    build1 -->|all green| PR([Developer opens PR to main])
+    PR --> test2
+
+    subgraph CI_PR["GitHub Actions — ci.yml (PR)"]
+        test2["test + build jobs run again"]
+    end
+
+    test2 -->|all green| MERGE([Merge to main])
+
+    MERGE --> gcb_step1
+    MERGE --> health_poll
+
+    subgraph GCB["Google Cloud Build"]
+        gcb_step1["docker build -t image:$COMMIT_SHA"] --> gcb_step2["docker push image:$COMMIT_SHA"]
+        gcb_step2 --> gcb_step3["gcloud run services update latam-challenge"]
+        gcb_step3 --> LIVE([Service live on Cloud Run])
+    end
+
+    subgraph CD["GitHub Actions — cd.yml"]
+        health_poll["polls GET /health every 30 s\nup to 10 attempts — 5 min\nexits 0 on HTTP 200, else 1"]
+    end
+```
+
+![CI/CD Flow](cicd_flow.png)
+
+---
+
+### GitHub Actions — `.github/workflows/ci.yml`
+
+Runs on every push to non-main branches and on every Pull Request targeting `main`. No GCP credentials required.
+
+```yaml
+jobs:
+  test:        # installs requirements.txt + requirements-test.txt, then runs
+               # make model-test and make api-test
+  build:       # (needs: test) runs docker build to validate the Dockerfile
+               # catches image-build regressions before they reach main
+```
+
+**Purpose**: prevent broken code from reaching `main`. If either job fails, GitHub marks the PR as failing and can be configured to block the merge.
+
+---
+
+### GitHub Actions — `.github/workflows/cd.yml`
+
+Runs on every push to `main` (i.e., after a merge). No GCP credentials required — the Cloud Run service is publicly accessible.
+
+```yaml
+jobs:
+  smoke-test:  # polls GET /health on the live Cloud Run URL
+               # retries every 30s for up to 5 minutes
+               # fails the workflow if the service never returns HTTP 200
+```
+
+**Purpose**: verify the deployment is healthy after Cloud Build finishes. Because Cloud Build and this workflow start concurrently, the retry loop absorbs the build time (typically 2–4 min).
+
+---
+
+### Google Cloud Build trigger
+
+Configured via the GCP Console. Fires automatically when code is pushed to the `main` branch of the GitHub repository. Uses the `Dockerfile` in the repo root — no `cloudbuild.yaml` is required.
+
+```yaml
+# Trigger: push to ^main$ on github.com/<owner>/latam_challenge
+description: Build and deploy to Cloud Run service latam-challenge on push to "^main$"
+
+build:
+  steps:
+    - name: gcr.io/cloud-builders/docker
+      id: Build
+      args:
+        - build
+        - --no-cache
+        - -t
+        - $_AR_HOSTNAME/<GCP_PROJECT_ID>/$_AR_REPOSITORY/$REPO_NAME/$_SERVICE_NAME:$COMMIT_SHA
+        - .
+        - -f
+        - Dockerfile
+
+    - name: gcr.io/cloud-builders/docker
+      id: Push
+      args:
+        - push
+        - $_AR_HOSTNAME/<GCP_PROJECT_ID>/$_AR_REPOSITORY/$REPO_NAME/$_SERVICE_NAME:$COMMIT_SHA
+
+    - name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+      id: Deploy
+      entrypoint: gcloud
+      args:
+        - run
+        - services
+        - update
+        - $_SERVICE_NAME
+        - --platform=managed
+        - --image=$_AR_HOSTNAME/<GCP_PROJECT_ID>/$_AR_REPOSITORY/$REPO_NAME/$_SERVICE_NAME:$COMMIT_SHA
+        - --region=$_DEPLOY_REGION
+        - --quiet
+
+  substitutions:
+    _AR_HOSTNAME: us-west1-docker.pkg.dev        # Artifact Registry host
+    _AR_REPOSITORY: cloud-run-source-deploy      # registry repository name
+    _SERVICE_NAME: latam-challenge               # Cloud Run service name
+    _DEPLOY_REGION: us-west1
+    # $COMMIT_SHA and $REPO_NAME are built-in Cloud Build variables
+
+  images:
+    - $_AR_HOSTNAME/<GCP_PROJECT_ID>/$_AR_REPOSITORY/$REPO_NAME/$_SERVICE_NAME:$COMMIT_SHA
+
+serviceAccount: <COMPUTE_SA>@developer.gserviceaccount.com
+```
+
+**Built-in substitution variables** (Cloud Build fills these automatically):
+
+| Variable | Value |
+|---|---|
+| `$COMMIT_SHA` | Full SHA of the triggering commit |
+| `$REPO_NAME` | Repository name (`latam_challenge`) |
+| `$PROJECT_ID` | GCP project ID |
+| `$BUILD_ID` | Unique ID of this Cloud Build run |
