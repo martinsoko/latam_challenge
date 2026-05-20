@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 env:
   CLOUD_RUN_URL: https://latam-challenge-1029052248468.us-west1.run.app
@@ -11,8 +12,12 @@ env:
 jobs:
   smoke-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - name: Wait for Cloud Build to deploy (retry up to 5 min)
+      - name: Wait for Cloud Build to start deploying
+        run: sleep 90
+
+      - name: Poll health endpoint (retry up to 5 min)
         run: |
           for i in $(seq 1 10); do
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$CLOUD_RUN_URL/health")
