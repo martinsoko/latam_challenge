@@ -248,4 +248,3 @@ class DelayModel:
             raise ValueError("Model has not been fitted yet. Call fit() before save_model().")
         logger.info("Saving model to %s", path)
         joblib.dump(self._model, path)
-        
