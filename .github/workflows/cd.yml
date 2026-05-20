@@ -1,0 +1,32 @@
+name: Continuous Delivery
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  CLOUD_RUN_URL: https://latam-challenge-1029052248468.us-west1.run.app
+
+jobs:
+  smoke-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Wait for Cloud Build to start deploying
+        run: sleep 90
+
+      - name: Poll health endpoint (retry up to 5 min)
+        run: |
+          for i in $(seq 1 10); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$CLOUD_RUN_URL/health")
+            if [ "$STATUS" = "200" ]; then
+              echo "Health check passed on attempt $i"
+              exit 0
+            fi
+            echo "Attempt $i: HTTP $STATUS — waiting 30s..."
+            sleep 30
+          done
+          echo "Health check failed after 10 attempts"
+          exit 1
