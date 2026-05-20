@@ -205,7 +205,7 @@ flowchart TD
         test1["test: install deps → model tests → API tests"] --> build1["build: docker build"]
     end
 
-    build1 -->|all green| PR([Developer opens PR to main])
+    build1 -->|all green| PR([Developer opens PR to main or develop])
     PR --> test2
 
     subgraph CI_PR["GitHub Actions — ci.yml (PR)"]
@@ -234,32 +234,38 @@ flowchart TD
 
 ### GitHub Actions — `.github/workflows/ci.yml`
 
-Runs on every push to non-main branches and on every Pull Request targeting `main`. No GCP credentials required.
+Runs on every push to non-main branches and on every Pull Request targeting `main` or `develop`. No GCP credentials required.
 
 ```yaml
 jobs:
-  test:        # installs requirements.txt + requirements-test.txt, then runs
-               # make model-test and make api-test
-  build:       # (needs: test) runs docker build to validate the Dockerfile
+  test:        # caches pip deps (keyed on requirements*.txt hash)
+               # installs requirements.txt + requirements-test.txt
+               # runs make model-test and make api-test
+               # uploads reports/ as a downloadable artifact (even on failure)
+  build:       # (needs: test) sets up Docker Buildx with GHA layer cache
+               # runs docker/build-push-action (push: false) to validate the Dockerfile
                # catches image-build regressions before they reach main
 ```
 
-**Purpose**: prevent broken code from reaching `main`. If either job fails, GitHub marks the PR as failing and can be configured to block the merge.
+**Purpose**: prevent broken code from reaching `main` or `develop`. If either job fails, GitHub marks the PR as failing and can be configured to block the merge.
 
 ---
 
 ### GitHub Actions — `.github/workflows/cd.yml`
 
-Runs on every push to `main` (i.e., after a merge). No GCP credentials required — the Cloud Run service is publicly accessible.
+Runs on every push to `main` (i.e., after a merge) and can be triggered manually via `workflow_dispatch`. No GCP credentials required — the Cloud Run service is publicly accessible.
 
 ```yaml
 jobs:
-  smoke-test:  # polls GET /health on the live Cloud Run URL
-               # retries every 30s for up to 5 minutes
-               # fails the workflow if the service never returns HTTP 200
+  smoke-test:
+    timeout-minutes: 10   # hard cap — prevents infinite hang if curl stalls
+    steps:
+      # step 1: wait 90 s to let Cloud Build get ahead before polling starts
+      # step 2: polls GET /health every 30s, up to 10 attempts (5 min window)
+      #         exits 0 on first HTTP 200, exits 1 if all attempts fail
 ```
 
-**Purpose**: verify the deployment is healthy after Cloud Build finishes. Because Cloud Build and this workflow start concurrently, the retry loop absorbs the build time (typically 2–4 min).
+**Purpose**: verify the deployment is healthy after Cloud Build finishes. The 90 s floor delay absorbs Cloud Build startup time (typically 2–4 min total build + deploy); the retry loop catches the remaining window.
 
 ---
 
@@ -309,11 +315,12 @@ build:
     _SERVICE_NAME: latam-challenge               # Cloud Run service name
     _DEPLOY_REGION: us-west1
     # $COMMIT_SHA and $REPO_NAME are built-in Cloud Build variables
+    # TODO: replace <GCP_PROJECT_ID> in the image paths above with your GCP project ID
 
   images:
     - $_AR_HOSTNAME/<GCP_PROJECT_ID>/$_AR_REPOSITORY/$REPO_NAME/$_SERVICE_NAME:$COMMIT_SHA
 
-serviceAccount: <COMPUTE_SA>@developer.gserviceaccount.com
+serviceAccount: <COMPUTE_SA>@developer.gserviceaccount.com  # TODO: replace <COMPUTE_SA> with your Compute Engine service account name
 ```
 
 **Built-in substitution variables** (Cloud Build fills these automatically):
